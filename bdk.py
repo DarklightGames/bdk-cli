@@ -19,23 +19,29 @@ def env(args: argparse.Namespace):
 
 
 def build(args: argparse.Namespace):
-    root_dir = os.environ['ROOT_DIR']
-    build_dir = os.environ['BUILD_DIR']
-    from export_assets import export_assets
-    export_assets(path=root_dir, output_path=build_dir, dry=args.dry)
+    root_directory = os.environ['ROOT_DIR']
+    build_directory = os.environ['BUILD_DIR']
+    from build import build_assets
+    build_assets(path=root_directory, build_directory=build_directory, dry=args.dry, mod=args.mod)
+
+
+def init(args: argparse.Namespace):
+    pass
 
 
 if __name__ == '__main__':
     parser = ArgumentParser(prog='bdk')
-    parser.add_argument('--mod', required=False)
+    parser.add_argument('--mod', required=False, help='mod name (e.g., DarkestHourDev)')
     parser.add_argument('--verbose', required=False, action='store_true', default=False)
-    subparsers = parser.add_subparsers(required=True, dest='command')
+    subparsers = parser.add_subparsers(required=True, dest='command', title='command')
     build_parser = subparsers.add_parser('build')
     build_parser.add_argument('--dry', required=False, action='store_true', default=False)
     build_parser.add_argument('--clean', required=False, action='store_true', default=False)
     build_parser.set_defaults(func=build)
-    test_parser = subparsers.add_parser('env')
-    test_parser.set_defaults(func=env)
+    env_parser = subparsers.add_parser('env')
+    env_parser.set_defaults(func=env)
+    init_parser = subparsers.add_parser('init')
+    init_parser.set_defaults(func=init)
 
     args = parser.parse_args()
 
