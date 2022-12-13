@@ -1,21 +1,18 @@
-import pickle
 import os
+import pickle
+import subprocess
 import sys
 import time
-from typing import Optional, Dict
-
-import binascii
 import tqdm
-import concurrent.futures
-import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Optional, Dict
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 
 
 class BuildManifest:
     class Package:
         def __init__(self):
-            self.mtime = 0.0
+            self.last_modified_time = 0.0
             self.size = 0
 
     def __init__(self):
@@ -61,7 +58,7 @@ def build_assets(path: str, build_directory: str, mod: Optional[str] = None, dry
         package = manifest.packages.get(basename, None)
         should_build_package = False
         if package:
-            if os.path.getmtime(package_path) != package.mtime or os.path.getsize(package_path) != package.size:
+            if os.path.getmtime(package_path) != package.last_modified_time or os.path.getsize(package_path) != package.size:
                 should_build_package = True
         else:
             package = BuildManifest.Package()
@@ -70,7 +67,7 @@ def build_assets(path: str, build_directory: str, mod: Optional[str] = None, dry
             package_paths_to_build.append(package_path)
 
         # Update the package stats in the manifest.
-        package.mtime = os.path.getmtime(package_path)
+        package.last_modified_time = os.path.getmtime(package_path)
         package.size = os.path.getsize(package_path)
 
         manifest.packages[basename] = package
@@ -82,7 +79,7 @@ def build_assets(path: str, build_directory: str, mod: Optional[str] = None, dry
     with tqdm.tqdm(total=len(package_paths_to_build)) as pbar:
         with ThreadPoolExecutor(max_workers=8) as executor:
             jobs = {executor.submit(export_package, build_directory, str(package_path)): package_path for package_path in package_paths_to_build}
-            for _ in concurrent.futures.as_completed(jobs):
+            for _ in as_completed(jobs):
                 pbar.update(1)
 
     save_manifest(manifest, build_directory)
@@ -100,7 +97,7 @@ def build_assets(path: str, build_directory: str, mod: Optional[str] = None, dry
         script_path = './blender/blend.py'
         input_directory = package_build_path
         library_directory = os.environ['LIBRARY_DIR']
-        package_type = 'StaticMesh'  # TODO: get this from somehwere real
+        package_type = 'StaticMesh'  # TODO: get this from somewhere real
         output_path = os.path.join(library_directory, package_type, f'{package_name}.blend')
 
         script_args = ['build', input_directory, '--output_path', output_path]

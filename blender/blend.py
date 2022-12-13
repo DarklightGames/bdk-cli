@@ -32,8 +32,8 @@ def build(args):
         new_object = bpy.data.objects[object_name]
         new_object.data['bdk_package_reference'] = f'{class_type}\'{package_name}.{object_name}\''
         new_object.asset_mark()
-        # new_object.asset_generate_preview(use_background_thread=False)   # 3.5 only
-        new_object.asset_generate_preview()
+        new_object.asset_generate_preview(use_background_thread=False)   # 3.5 only
+        # new_object.asset_generate_preview()
 
         count += 1
 
