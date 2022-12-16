@@ -19,10 +19,13 @@ def env(args: argparse.Namespace):
 
 
 def build(args: argparse.Namespace):
-    root_directory = os.environ['ROOT_DIR']
-    build_directory = os.environ['BUILD_DIR']
     from build import build_assets
-    build_assets(path=root_directory, build_directory=build_directory, dry=args.dry, mod=args.mod)
+    build_assets(dry=args.dry, mod=args.mod, clean=args.clean)
+
+
+def export(args: argparse.Namespace):
+    from build import export_assets
+    export_assets(dry=args.dry, mod=args.mod, clean=args.clean)
 
 
 def init(args: argparse.Namespace):
@@ -34,6 +37,10 @@ if __name__ == '__main__':
     parser.add_argument('--mod', required=False, help='mod name (e.g., DarkestHourDev)')
     parser.add_argument('--verbose', required=False, action='store_true', default=False)
     subparsers = parser.add_subparsers(required=True, dest='command', title='command')
+    export_parser = subparsers.add_parser('export')
+    export_parser.add_argument('--dry', required=False, action='store_true', default=False)
+    export_parser.add_argument('--clean', required=False, action='store_true', default=False)
+    export_parser.set_defaults(func=export)
     build_parser = subparsers.add_parser('build')
     build_parser.add_argument('--dry', required=False, action='store_true', default=False)
     build_parser.add_argument('--clean', required=False, action='store_true', default=False)

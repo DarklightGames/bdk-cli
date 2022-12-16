@@ -1,5 +1,7 @@
+import typing
+import re
 from enum import Enum
-from typing import Optional, List, Any
+from typing import Optional, List
 
 
 UReference = Optional[str]
@@ -8,7 +10,19 @@ UReference = Optional[str]
 class URotator:
     Pitch: int = 0
     Yaw: int = 0
-    Roll: int = 0
+    Roll: int = 0.
+
+    @staticmethod
+    def from_string(string: str):
+        self = URotator()
+        match = re.match(r'\{ Yaw=(\d+), Pitch=(\d+), Roll=(\d+) }', string)
+        self.Yaw = int(match.group(1))
+        self.Pitch = int(match.group(2))
+        self.Roll = int(match.group(3))
+        return self
+
+    def __repr__(self):
+        return f'{{ Yaw={self.Yaw}, Pitch={self.Pitch}, Roll={self.Roll} }}'
 
 
 class EFrameBufferBlending(Enum):
@@ -43,6 +57,13 @@ class UMaterial:
     DefaultMaterial: UReference = None
     SurfaceType: int = 0
 
+    def __repr__(self):
+        lines = []
+        type_hints = typing.get_type_hints(self)
+        for key, value in type_hints.items():
+            lines.append(f'{key} = {getattr(self, key)}')
+        return '\n'.join(lines)
+
 
 class URenderedMaterial(UMaterial):
     pass
@@ -70,7 +91,7 @@ class ETextureFormat(Enum):
     TEXF_G16 = 10,  # 16-bit grayscale (terrain heightmaps)
     TEXF_RRRGGGBBB = 11,  # Tribes texture formats
     TEXF_CxV8U8 = 12,
-    TEXF_DXT5N = 13,  # Note: in Bioshock this value has name 3DC, but really DXT5N is used
+    TEXF_DXT5N = 13,  # Note: in Bioshock this value has the name 3DC, but really DXT5N is used
     TEXF_3DC = 14,  # BC5 compression
 
 
@@ -93,7 +114,7 @@ class UTexture(UBitmapMaterial):
 
 
 class UCubemap(UTexture):
-    Faces: List[UTexture] = []
+    Faces: List[UReference] = []
 
 
 class EOutputBlending(Enum):

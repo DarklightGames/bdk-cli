@@ -5,7 +5,7 @@ import sys
 import time
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from pathlib import Path
 
 
@@ -40,15 +40,24 @@ def save_manifest(manifest: BuildManifest, build_directory: str):
 
 
 def export_package(output_path: str, package_path: str):
-    args = [os.environ['UMODEL_PATH'], '-export', f'-out="{output_path}"', package_path]
+    root_dir = os.environ['ROOT_DIR']
+    args = [os.environ['UMODEL_PATH'], '-export', f'-out="{output_path}"', f'-path={root_dir}', package_path]
     return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-def build_assets(path: str, build_directory: str, mod: Optional[str] = None, dry: bool = False, verbose: bool = False):
-    manifest = load_manifest(build_directory)
-    # suffixes = ['.usx', '.utx', '.ukx']
-    suffixes = ['.usx']
-    package_paths = list(p.resolve() for p in Path(path).glob("**/*") if p.suffix in suffixes)
+def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = False) -> List[Path]:
+    root_directory = os.environ['ROOT_DIR']
+    build_directory = os.environ['BUILD_DIR']
+
+    if clean:
+        manifest = BuildManifest()
+    else:
+        manifest = load_manifest(build_directory)
+
+    print(len(manifest.packages))
+
+    suffixes = ['.usx', '.utx']
+    package_paths = list(p.resolve() for p in Path(root_directory).glob("**/*") if p.suffix in suffixes)
 
     package_paths_to_build = []
 
@@ -62,6 +71,7 @@ def build_assets(path: str, build_directory: str, mod: Optional[str] = None, dry
                 should_build_package = True
         else:
             package = BuildManifest.Package()
+            should_build_package = True
 
         if should_build_package:
             package_paths_to_build.append(package_path)
@@ -84,11 +94,16 @@ def build_assets(path: str, build_directory: str, mod: Optional[str] = None, dry
 
     save_manifest(manifest, build_directory)
 
+    return package_paths_to_build
+
+
+def build_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = False):
+    package_paths_to_build = export_assets(mod, dry, clean)
     # Now blend the assets.
     for package_path in package_paths_to_build:
 
         package_name = os.path.splitext(os.path.basename(package_path))[0]
-        package_build_path = os.path.join(build_directory, package_name)
+        package_build_path = os.path.join(os.environ['BUILD_DIR'], package_name)
 
         if not package_name.endswith('_stc'):
             continue
