@@ -1,7 +1,7 @@
+import fnmatch
+import json
 import os
-import pickle
 import subprocess
-import sys
 import time
 import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -9,65 +9,123 @@ from typing import Optional, Dict, List
 from pathlib import Path
 
 
-class BuildManifest:
-    class Package:
+MANIFEST_FILENAME = '.bdkmanifest'
+
+
+class BuildManifest(dict):
+
+    class Package(dict):
         def __init__(self):
-            self.last_modified_time = 0.0
-            self.size = 0
+            dict.__init__(self, last_modified_time=0.0, size=0, is_built=False)
 
-    def __init__(self):
-        self.packages: Dict[str, BuildManifest.Package] = {}
+        @property
+        def last_modified_time(self) -> float:
+            return self['last_modified_time']
+
+        @property
+        def size(self) -> int:
+            return self['size']
+
+        @property
+        def is_built(self) -> bool:
+            return self['is_built']
+
+        @is_built.setter
+        def is_built(self, value: bool):
+            self['is_built'] = value
+
+        @last_modified_time.setter
+        def last_modified_time(self, value: float):
+            self['last_modified_time'] = value
+
+        @size.setter
+        def size(self, value: int):
+            self['size'] = value
+
+    def __init__(self, packages):
+        dict.__init__(self, packages=packages)
+
+    @property
+    def packages(self) -> Dict[str, Package]:
+        return self['packages']
+
+    def mark_package_as_built(self, package_relative_directory: str):
+        if package_relative_directory in self.packages:
+            self.packages[package_relative_directory]['is_built'] = True
+
+    @staticmethod
+    def load_from_directory(build_directory: str) -> 'BuildManifest':
+        packages = {}
+        manifest_path = Path(os.path.join(build_directory, MANIFEST_FILENAME)).resolve()
+        if os.path.isfile(manifest_path):
+            with open(manifest_path, 'r') as file:
+                try:
+                    data = json.load(file)
+                    packages = data['packages']
+                except UnicodeDecodeError as e:
+                    print(e)
+                print('Build manifest loaded')
+        else:
+            print('Build manifest file not found')
+        return BuildManifest(packages)
+
+    def save_to_directory(self, build_directory: str):
+        manifest_path = Path(os.path.join(build_directory, MANIFEST_FILENAME)).resolve()
+        with open(manifest_path, 'w') as file:
+            json.dump(self, file, indent=2)
 
 
-def load_manifest(build_directory: str) -> BuildManifest:
-    manifest = BuildManifest()
-    manifest_path = Path(os.path.join(build_directory, 'build.manifest')).resolve()
-    print(manifest_path)
-    if os.path.isfile(build_directory):
-        with open(manifest_path, 'r') as file:
-            try:
-                manifest = pickle.load(file)
-            except pickle.UnpicklingError as e:
-                print(f'Failed to load build manifest: {e}', file=sys.stderr)
-            print('Build manifest loaded')
-    return manifest
-
-
-def save_manifest(manifest: BuildManifest, build_directory: str):
-    manifest_path = Path(os.path.join(build_directory, 'build.manifest')).resolve()
-    with open(manifest_path, 'wb') as file:
-        pickle.dump(manifest, file)
+# Dirties a single package so that it is marked for re-export.
+def dirty_package(package_name_search: str):
+    build_directory = str(Path(os.environ['BUILD_DIR']).resolve())
+    manifest = BuildManifest.load_from_directory(build_directory)
+    for package_path, _ in manifest.packages.items():
+        package_name = os.path.splitext(os.path.basename(package_path))[0]
+        if package_name == package_name_search:
+            print(f'Dirtied {package_path}')
+            manifest.packages.pop(package_path)
+            break
+    manifest.save_to_directory(build_directory)
 
 
 def export_package(output_path: str, package_path: str):
-    root_dir = os.environ['ROOT_DIR']
-    args = [os.environ['UMODEL_PATH'], '-export', f'-out="{output_path}"', f'-path={root_dir}', package_path]
+    root_dir = str(Path(os.environ['ROOT_DIR']).resolve())
+    args = [os.environ['UMODEL_PATH'], '-export', '-nolinked', f'-out="{output_path}"', f'-path={root_dir}', package_path]
     return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = False) -> List[Path]:
-    root_directory = os.environ['ROOT_DIR']
-    build_directory = os.environ['BUILD_DIR']
+def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = False) -> List[str]:
+    root_directory = str(Path(os.environ['ROOT_DIR']).resolve())
+    build_directory = str(Path(os.environ['BUILD_DIR']).resolve())
 
     if clean:
-        manifest = BuildManifest()
+        manifest = BuildManifest(packages={})
     else:
-        manifest = load_manifest(build_directory)
+        manifest = BuildManifest.load_from_directory(build_directory)
 
-    print(len(manifest.packages))
-
-    suffixes = ['.usx', '.utx']
-    package_paths = list(p.resolve() for p in Path(root_directory).glob("**/*") if p.suffix in suffixes)
-
+    suffixes = ['.usx', '.utx', '.rom']
+    # suffixes = ['.rom']
+    package_paths = set(str(p.resolve()) for p in Path(root_directory).glob("**/*") if p.suffix in suffixes)
     package_paths_to_build = []
+
+    ignore_patterns = set()
+    bdkignore_path = os.path.join(root_directory, '.bdkignore')
+    if os.path.isfile(bdkignore_path):
+        with open(bdkignore_path, 'r') as f:
+            ignore_patterns = map(lambda x: x.strip(), f.readlines())
+
+    # Filter out packages based on patterns in the .bdkignore file in the root directory.
+    for ignore_pattern in ignore_patterns:
+        package_paths = package_paths.difference(fnmatch.filter(package_paths, ignore_pattern))
 
     # Compile a list of packages that are out of date with the manifest.
     for package_path in package_paths:
-        basename = os.path.basename(package_path)
-        package = manifest.packages.get(basename, None)
+        package_path_relative = os.path.relpath(package_path, root_directory)
+        package = manifest.packages.get(package_path_relative, None)
         should_build_package = False
         if package:
-            if os.path.getmtime(package_path) != package.last_modified_time or os.path.getsize(package_path) != package.size:
+            if os.path.getmtime(package_path) != package['last_modified_time'] or \
+                    os.path.getsize(package_path) != package['size']:
                 should_build_package = True
         else:
             package = BuildManifest.Package()
@@ -77,44 +135,65 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
             package_paths_to_build.append(package_path)
 
         # Update the package stats in the manifest.
-        package.last_modified_time = os.path.getmtime(package_path)
-        package.size = os.path.getsize(package_path)
+        package['last_modified_time'] = os.path.getmtime(package_path)
+        package['size'] = os.path.getsize(package_path)
 
-        manifest.packages[basename] = package
+        manifest.packages[package_path_relative] = package
 
     print(f'{len(package_paths)} package(s) | {len(package_paths_to_build)} package(s) out-of-date')
 
     time.sleep(0.1)
 
-    with tqdm.tqdm(total=len(package_paths_to_build)) as pbar:
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            jobs = {executor.submit(export_package, build_directory, str(package_path)): package_path for package_path in package_paths_to_build}
-            for _ in as_completed(jobs):
-                pbar.update(1)
+    if not dry and len(package_paths_to_build) > 0:
+        with tqdm.tqdm(total=len(package_paths_to_build)) as pbar:
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                jobs = []
+                for package_path in package_paths_to_build:
+                    package_build_directory = os.path.dirname(os.path.relpath(package_path, root_directory))
+                    os.makedirs(package_build_directory, exist_ok=True)
+                    jobs.append(executor.submit(export_package, os.path.join(build_directory, package_build_directory), str(package_path)))
+                for _ in as_completed(jobs):
+                    pbar.update(1)
 
-    save_manifest(manifest, build_directory)
+        manifest.save_to_directory(build_directory)
 
     return package_paths_to_build
 
 
 def build_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = False):
-    package_paths_to_build = export_assets(mod, dry, clean)
+
+    # First export the assets.
+    export_assets(mod, dry, clean)
+
+    build_directory = str(Path(os.environ['BUILD_DIR']).resolve())
+
+    manifest = BuildManifest.load_from_directory(build_directory)
+
+    # TQDM this once we sort all the errors
+    # Build a list of packages that have been exported but haven't been built yet.
+    package_paths_to_build = []
+    for package_path, package in manifest.packages.items():
+        if not package['is_built']:
+            package_paths_to_build.append(package_path)
+
     # Now blend the assets.
     for package_path in package_paths_to_build:
+        package_name = os.path.basename(package_path)
+        package_build_path = str(Path(os.path.join(os.environ['BUILD_DIR'], package_path)).resolve())
 
-        package_name = os.path.splitext(os.path.basename(package_path))[0]
-        package_build_path = os.path.join(os.environ['BUILD_DIR'], package_name)
-
-        if not package_name.endswith('_stc'):
-            continue
-
-        blender_path = os.environ['BLENDER_PATH']
         script_path = './blender/blend.py'
-        input_directory = package_build_path
-        library_directory = os.environ['LIBRARY_DIR']
-        package_type = 'StaticMesh'  # TODO: get this from somewhere real
-        output_path = os.path.join(library_directory, package_type, f'{package_name}.blend')
+
+        input_directory = os.path.splitext(package_build_path)[0]
+        output_path = os.path.join(os.environ['LIBRARY_DIR'], Path(package_path).with_suffix('.blend'))
+        output_path = str(Path(output_path).resolve())
 
         script_args = ['build', input_directory, '--output_path', output_path]
-        args = [blender_path, '--background', '--python', script_path, '--'] + script_args
-        subprocess.Popen(args).communicate()
+
+        args = [os.environ['BLENDER_PATH'], '--background', './blender/build_template.blend', '--python', script_path, '--'] + script_args
+        if subprocess.call(args) == 0:
+            manifest.mark_package_as_built(package_path)
+        else:
+            print('BUILD FAILED FOR ' + package_name)
+            pass
+
+    manifest.save_to_directory(build_directory)
