@@ -6,7 +6,7 @@ The purpose of this command line tool is to convert Unreal Engine 2 packages (e.
 
 # Prerequisites
 * Python 3.10+
-* Blender 3.4.0+
+* Blender 3.5.0+
 * Umodel (build 1590)
 
 # Installation
