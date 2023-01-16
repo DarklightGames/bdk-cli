@@ -5,7 +5,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-BLENDER_VERSION_MIN = '3.4.0'
+BLENDER_VERSION_MIN = '3.5.0'
 UMODEL_VERSION_MIN = 1590
 IO_SCENE_PSK_PSA_VERSION_MIN = '4.2.0'
 IO_IMPORT_UMATERIAL_VERSION_MIN = '0.1.0'

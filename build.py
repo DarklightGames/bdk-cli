@@ -146,6 +146,8 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
 
     print(f'{len(package_paths)} file(s) | {len(packages_to_build)} file(s) out-of-date')
 
+    # This is here so tqdm displays correctly inside PyCharm terminals,
+    # otherwise it gets all messed up.
     time.sleep(0.1)
 
     if not dry and len(packages_to_build) > 0:

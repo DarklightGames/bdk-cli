@@ -62,13 +62,13 @@ def build(args):
 
     # Materials.
     for file in material_files:
-        print(file)
         filepath = os.path.join(args.input_directory, file)
         object_name = os.path.basename(file).replace('.props.txt', '')
 
         try:
-            bpy.ops.import_material.umaterial(filepath=filepath)
+            bpy.ops.bdk.import_material(filepath=filepath)
         except Exception as e:
+            print(e)
             continue
 
         class_type = Path(os.path.join(args.input_directory, file)).parent.parts[-1]
@@ -123,7 +123,7 @@ def build(args):
 
 if __name__ == '__main__':
     addon_utils.enable('io_scene_psk_psa')
-    addon_utils.enable('io_import_umaterial')
+    addon_utils.enable('bdk_addon')
 
     parser = ArgumentParser()
     subparsers = parser.add_subparsers(title='command')
