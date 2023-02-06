@@ -71,9 +71,7 @@ def build(args):
             print(e)
             continue
 
-        class_type = Path(os.path.join(args.input_directory, file)).parent.parts[-1]
         new_material = bpy.data.materials[object_name]
-        new_material['bdk_reference'] = f'{class_type}\'{package_name}.{object_name}\''
         new_ids.append(new_material)
 
     # Static Meshes.
@@ -83,25 +81,26 @@ def build(args):
         filenames = [os.path.join(args.input_directory, 'StaticMesh', f'{object_name}{extension}') for extension in extensions]
 
         for filename in filenames:
-            if os.path.isfile(filename):
-                try:
-                    bpy.ops.import_scene.psk(
-                        filepath=filename,
-                        should_import_skeleton=False,
-                        should_import_materials=True
-                    )
-                except Exception as e:
-                    print(e)
-                    continue
+            if not os.path.isfile(filename):
+                continue
+            try:
+                bpy.ops.import_scene.psk(
+                    filepath=filename,
+                    should_import_skeleton=False,
+                    should_import_materials=True
+                )
+            except Exception as e:
+                print(e)
+                continue
 
-                new_object = bpy.data.objects[object_name]
-                new_object.data.name = f'StaticMesh\'{package_name}.{object_name}\''
-                new_object.data.use_auto_smooth = False
+            new_object = bpy.data.objects[object_name]
+            new_object.data.name = f'StaticMesh\'{package_name}.{object_name}\''
+            new_object.data.use_auto_smooth = False
 
-                new_object['Class'] = 'StaticMeshActor'
+            new_object['Class'] = 'StaticMeshActor'
 
-                new_ids.append(new_object)
-                break
+            new_ids.append(new_object)
+            break
 
     # Generate previews.
     for new_id in new_ids:
