@@ -155,9 +155,12 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
             with ThreadPoolExecutor(max_workers=8) as executor:
                 jobs = []
                 for package_path in packages_to_build:
-                    package_build_directory = os.path.dirname(os.path.relpath(package_path, root_directory))
+                    package_build_directory = os.path.join(
+                        build_directory,
+                        os.path.dirname(os.path.relpath(package_path, root_directory))
+                    )
                     os.makedirs(package_build_directory, exist_ok=True)
-                    jobs.append(executor.submit(export_package, os.path.join(build_directory, package_build_directory), str(package_path)))
+                    jobs.append(executor.submit(export_package, package_build_directory, str(package_path)))
                 for _ in as_completed(jobs):
                     pbar.update(1)
 
