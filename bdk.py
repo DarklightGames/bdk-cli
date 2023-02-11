@@ -70,7 +70,7 @@ def rebuild(args: argparse.Namespace):
 
 def build_cubemaps(args: argparse.Namespace):
     from build import build_cube_maps
-    build_cube_maps()
+    build_cube_maps(clean=args.clean)
 
 
 def init(args: argparse.Namespace):
@@ -94,6 +94,7 @@ if __name__ == '__main__':
     export_parser.set_defaults(func=export)
 
     build_cubemaps_parser = subparsers.add_parser('build-cubemaps')
+    build_cubemaps_parser.add_argument('--clean', required=False, default=False, action='store_true')
     build_cubemaps_parser.set_defaults(func=build_cubemaps)
 
     build_parser = subparsers.add_parser('build')

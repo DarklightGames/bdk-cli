@@ -1,6 +1,7 @@
 import fnmatch
 import json
 import os
+import pprint
 import re
 import subprocess
 import time
@@ -169,7 +170,7 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
     return packages_to_build
 
 
-def build_cube_maps():
+def build_cube_maps(clean: bool = False):
     manifest = BuildManifest.load()
 
     pattern = '**/Cubemap/*.props.txt'
@@ -188,7 +189,7 @@ def build_cube_maps():
         size = os.path.getsize(file_path)
         if cubemap_file_path in manifest.files:
             file = manifest.files[cubemap_file_path]
-            if mtime != file['last_modified_time'] or size != file['size'] or not file['is_built']:
+            if clean or mtime != file['last_modified_time'] or size != file['size'] or not file['is_built']:
                 # Update the file stats in the manifest.
                 file['last_modified_time'] = mtime
                 file['size'] = size
@@ -207,14 +208,19 @@ def build_cube_maps():
 
     with tqdm.tqdm(total=len(cubemap_file_paths_to_build)) as pbar:
         for cubemap_file in cubemap_file_paths_to_build:
+            relative_package_directory = Path(cubemap_file).parent.parent
             with open(os.path.join(os.environ['BUILD_DIR'], cubemap_file), 'r') as f:
                 contents = f.read()
                 textures = re.findall(r'Faces\[\d] = ([\w\d]+\'[\w\d_\-.]+\')', contents)
                 faces = []
                 for texture in textures:
                     face_reference = UReference.from_string(texture)
-                    image_path = os.path.join(build_directory, face_reference.package_name, face_reference.type_name,
-                                              f'{face_reference.object_name}.tga')
+                    image_path = os.path.join(
+                        build_directory,
+                        relative_package_directory,
+                        face_reference.type_name,
+                        f'{face_reference.object_name}.tga'
+                    )
                     faces.append(image_path)
                 output_path = os.path.join(build_directory, cubemap_file.replace('.props.txt', '.tga'))
                 args = [
@@ -224,6 +230,7 @@ def build_cube_maps():
                     '--python',
                     './blender/cube2sphere.py',
                     '--']
+
                 args.extend(faces)
                 args.extend(['--output', output_path])
                 completed_process = subprocess.run(args, stdout=open(os.devnull, 'wb'))
@@ -246,7 +253,7 @@ def build_assets(
         export_assets(mod, dry, clean)
 
     # Build the cube maps.
-    build_cube_maps()
+    build_cube_maps(clean)
 
     manifest = BuildManifest.load()
 
