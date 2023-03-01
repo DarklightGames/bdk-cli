@@ -105,8 +105,11 @@ def build(args):
     # Generate previews.
     for new_id in new_ids:
         new_id.asset_mark()
-        new_id.asset_generate_preview(use_background_thread=False)
 
+    # Ensure that the previews are good to go.
+    bpy.ops.wm.previews_ensure()
+
+    # Save the file to disk.
     if args.output_path is None:
         args.output_path = os.path.join(args.input_directory, f'{package_name}.blend')
 
