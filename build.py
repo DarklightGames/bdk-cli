@@ -1,8 +1,8 @@
 import fnmatch
 import json
 import os
-import pprint
 import re
+import shutil
 import subprocess
 import time
 from glob import glob
@@ -60,7 +60,7 @@ class BuildManifest(dict):
 
     @staticmethod
     def load() -> 'BuildManifest':
-        build_directory = str(Path(os.environ['BUILD_DIR']).resolve())
+        build_directory = str(Path(os.environ['BUILD_DIRECTORY']).resolve())
         packages = {}
         manifest_path = Path(os.path.join(build_directory, MANIFEST_FILENAME)).resolve()
 
@@ -78,7 +78,7 @@ class BuildManifest(dict):
         return BuildManifest(packages)
 
     def save(self):
-        build_directory = str(Path(os.environ['BUILD_DIR']).resolve())
+        build_directory = str(Path(os.environ['BUILD_DIRECTORY']).resolve())
         manifest_path = Path(os.path.join(build_directory, MANIFEST_FILENAME)).resolve()
         with open(manifest_path, 'w') as file:
             json.dump(self, file, indent=2)
@@ -92,19 +92,31 @@ def rebuild_assets(mod, dry, clean):
 
 
 def export_package(output_path: str, package_path: str):
-    root_dir = str(Path(os.environ['ROOT_DIR']).resolve())
+    root_dir = str(Path(os.environ['ROOT_DIRECTORY']).resolve())
     args = [os.environ['UMODEL_PATH'], '-export', '-nolinked', f'-out="{output_path}"', f'-path={root_dir}', package_path]
     return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = False) -> List[str]:
-    root_directory = str(Path(os.environ['ROOT_DIR']).resolve())
-    build_directory = str(Path(os.environ['BUILD_DIR']).resolve())
+def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = False, name_filter: Optional[str] = None) -> List[str]:
+    root_directory = str(Path(os.environ['ROOT_DIRECTORY']).resolve())
+    build_directory = str(Path(os.environ['BUILD_DIRECTORY']).resolve())
 
+    # TODO: only clean the packages that we want to build (e.g. name_filter)
     if clean:
         manifest = BuildManifest(files={})
     else:
         manifest = BuildManifest.load()
+
+    # TODO: remove package references that no longer exist, and delete their associated bdk-build data.
+    manifest_files = [x for x in manifest.files]
+    for file in manifest_files:
+        path = Path(root_directory, file)
+        if not path.is_file():
+            print(f"{path} no longer exists!")
+            package_build_directory = Path(build_directory, file).with_suffix('')
+            if package_build_directory.is_dir():
+                shutil.rmtree(package_build_directory)
+            manifest.files.pop(file)
 
     # Read ignore patterns from the .bdkignore file.
     bdkignore_filename = '.bdkignore'
@@ -115,7 +127,7 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
             ignore_patterns = map(lambda x: x.strip(), f.readlines())
 
     # Get a list of packages with matching suffixes in the root directory.
-    package_suffixes = ['.usx', '.utx']
+    package_suffixes = ['.usx', '.utx', '.rom']
     package_paths = set(str(p.resolve()) for p in Path(root_directory).glob("**/*") if p.suffix in package_suffixes)
 
     # Filter out packages based on patterns in the .bdkignore file in the root directory.
@@ -125,15 +137,21 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
     # Compile a list of packages that are out of date with the manifest.
     packages_to_build = []
     for package_path in package_paths:
+        if name_filter is not None and not fnmatch.fnmatch(os.path.basename(package_path), name_filter):
+            continue
         package_path_relative = os.path.relpath(package_path, root_directory)
         file = manifest.files.get(package_path_relative, None)
         should_build_file = False
+
         if file:
             if os.path.getmtime(package_path) != file['last_modified_time'] or \
                     os.path.getsize(package_path) != file['size']:
                 should_build_file = True
         else:
             file = BuildManifest.File()
+            should_build_file = True
+
+        if clean:
             should_build_file = True
 
         if should_build_file:
@@ -165,6 +183,7 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
                 for _ in as_completed(jobs):
                     pbar.update(1)
 
+    if not dry:
         manifest.save()
 
     return packages_to_build
@@ -174,7 +193,7 @@ def build_cube_maps(clean: bool = False):
     manifest = BuildManifest.load()
 
     pattern = '**/Cubemap/*.props.txt'
-    build_directory = Path(os.environ['BUILD_DIR']).resolve()
+    build_directory = Path(os.environ['BUILD_DIRECTORY']).resolve()
     cubemap_file_paths = []
     for cubemap_file_path in glob(pattern, root_dir=build_directory, recursive=True):
         cubemap_file_paths.append(cubemap_file_path)
@@ -209,7 +228,7 @@ def build_cube_maps(clean: bool = False):
     with tqdm.tqdm(total=len(cubemap_file_paths_to_build)) as pbar:
         for cubemap_file in cubemap_file_paths_to_build:
             relative_package_directory = Path(cubemap_file).parent.parent
-            with open(os.path.join(os.environ['BUILD_DIR'], cubemap_file), 'r') as f:
+            with open(os.path.join(os.environ['BUILD_DIRECTORY'], cubemap_file), 'r') as f:
                 contents = f.read()
                 textures = re.findall(r'Faces\[\d] = ([\w\d]+\'[\w\d_\-.]+\')', contents)
                 faces = []
@@ -246,6 +265,7 @@ def build_assets(
         dry: bool = False,
         clean: bool = False,
         no_export: bool = False,
+        no_cubemaps: bool = False,
         name_filter: Optional[str] = None):
 
     # First export the assets.
@@ -253,12 +273,13 @@ def build_assets(
         export_assets(mod, dry, clean)
 
     # Build the cube maps.
-    build_cube_maps(clean)
+    if not no_cubemaps:
+        build_cube_maps(clean)
 
     manifest = BuildManifest.load()
 
     # TODO: TQDM this once we sort all the errors
-
+    # TODO: we need to exclude cubemaps from this!
     # Build a list of packages that have been exported but haven't been built yet.
     package_paths_to_build = []
     for file_path, file in manifest.files.items():
@@ -268,10 +289,13 @@ def build_assets(
     if name_filter is not None:
         package_paths_to_build = fnmatch.filter(package_paths_to_build, name_filter)
 
+    if len(package_paths_to_build) == 0:
+        print('No packages marked to be built')
+
     # Order the packages so that texture packages are built first.
-    # NOTE: It's possible for non-UTX packages to have textures in them, but
-    # this is an edge case that isn't worth handling at the moment. (surprise, now you have to handle it)
-    ext_order = ['.usx', '.utx', '.txt']
+    # NOTE: It's possible for non-UTX packages to have textures in them.
+    ext_order = ['.usx', '.utx', '.rom']
+    package_paths_to_build = list(filter(lambda x: os.path.splitext(x)[1] in ext_order, package_paths_to_build))
 
     def package_extension_sort_key_cb(path: str):
         try:
@@ -281,15 +305,24 @@ def build_assets(
 
     package_paths_to_build.sort(key=package_extension_sort_key_cb, reverse=True)
 
+    success_count = 0
+    failure_count = 0
+
     # Now blend the assets.
     for package_path in package_paths_to_build:
         package_name = os.path.basename(package_path)
-        package_build_path = str(Path(os.path.join(os.environ['BUILD_DIR'], package_path)).resolve())
+        package_build_path = str(Path(os.path.join(os.environ['BUILD_DIRECTORY'], package_path)).resolve())
 
         script_path = './blender/blend.py'
 
         input_directory = os.path.splitext(package_build_path)[0]
-        output_path = os.path.join(os.environ['LIBRARY_DIR'], Path(package_path).with_suffix('.blend'))
+
+        if os.path.splitext(package_path)[1] == '.rom':
+            root_directory = os.environ['MAPS_DIRECTORY']
+        else:
+            root_directory = os.environ['LIBRARY_DIRECTORY']
+
+        output_path = os.path.join(root_directory, Path(package_path).with_suffix('.blend'))
         output_path = str(Path(output_path).resolve())
 
         script_args = ['build', input_directory, '--output_path', output_path]
@@ -305,8 +338,11 @@ def build_assets(
 
         if subprocess.call(args) == 0:
             manifest.mark_file_as_built(package_path)
+            success_count += 1
         else:
             print('BUILD FAILED FOR ' + package_name)
-            pass
+            failure_count += 1
 
     manifest.save()
+
+    print(f'{success_count} Succeeded | {failure_count} Failed')

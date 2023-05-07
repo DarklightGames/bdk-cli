@@ -55,12 +55,12 @@ def env(args: argparse.Namespace):
 
 def build(args: argparse.Namespace):
     from build import build_assets
-    build_assets(dry=args.dry, mod=args.mod, clean=args.clean, no_export=args.no_export, name_filter=args.name_filter)
+    build_assets(dry=args.dry, mod=args.mod, clean=args.clean, no_export=args.no_export, name_filter=args.name_filter, no_cubemaps=args.no_cubemaps)
 
 
 def export(args: argparse.Namespace):
     from build import export_assets
-    export_assets(dry=args.dry, mod=args.mod, clean=args.clean)
+    export_assets(dry=args.dry, mod=args.mod, clean=args.clean, name_filter=args.name_filter)
 
 
 def rebuild(args: argparse.Namespace):
@@ -90,6 +90,7 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers(required=True, dest='command', title='command')
 
     export_parser = subparsers.add_parser('export')
+    export_parser.add_argument('--name_filter', required=False, default=None)
     add_common_arguments(export_parser)
     export_parser.set_defaults(func=export)
 
@@ -99,6 +100,7 @@ if __name__ == '__main__':
 
     build_parser = subparsers.add_parser('build')
     build_parser.add_argument('--no_export', required=False, action='store_true')
+    build_parser.add_argument('--no_cubemaps', required=False, action='store_true')
     build_parser.add_argument('--name_filter', required=False, default=None)
     add_common_arguments(build_parser)
     build_parser.set_defaults(func=build)

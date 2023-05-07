@@ -2,6 +2,7 @@ import sys
 import warnings
 from pathlib import Path
 from typing import List
+import threading
 
 import bpy
 import os
@@ -105,10 +106,7 @@ def build(args):
     # Generate previews.
     for new_id in new_ids:
         new_id.asset_mark()
-
-    # Ensure that the previews are good to go.
-    bpy.ops.wm.previews_ensure()
-
+        new_id.asset_generate_preview()
     # Save the file to disk.
     if args.output_path is None:
         args.output_path = os.path.join(args.input_directory, f'{package_name}.blend')
