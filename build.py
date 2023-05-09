@@ -93,7 +93,8 @@ def rebuild_assets(mod, dry, clean):
 
 def export_package(output_path: str, package_path: str):
     root_dir = str(Path(os.environ['ROOT_DIRECTORY']).resolve())
-    args = [os.environ['UMODEL_PATH'], '-export', '-nolinked', f'-out="{output_path}"', f'-path={root_dir}', package_path]
+    umodel_path = Path(os.environ['UMODEL_PATH']).resolve()
+    args = [str(umodel_path), '-export', '-nolinked', f'-out="{output_path}"', f'-path="{root_dir}"', package_path]
     return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
@@ -126,9 +127,22 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
         with open(bdkignore_path, 'r') as f:
             ignore_patterns = map(lambda x: x.strip(), f.readlines())
 
+    asset_paths = [
+        "Animations",
+        "StaticMeshes",
+        "Textures",
+        "Sounds"
+    ]
+
+    if mod is not None:
+        asset_paths += [mod]
+
     # Get a list of packages with matching suffixes in the root directory.
     package_suffixes = ['.usx', '.utx', '.rom']
-    package_paths = set(str(p.resolve()) for p in Path(root_directory).glob("**/*") if p.suffix in package_suffixes)
+    package_paths = set()
+
+    for asset_path in asset_paths:
+        package_paths = package_paths.union(set(str(p.resolve()) for p in Path(root_directory, asset_path).glob("**/*") if p.suffix in package_suffixes))
 
     # Filter out packages based on patterns in the .bdkignore file in the root directory.
     for ignore_pattern in ignore_patterns:
