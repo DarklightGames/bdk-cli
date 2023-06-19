@@ -94,9 +94,16 @@ def build(args):
                 print(e)
                 continue
 
+            package_reference = f'StaticMesh\'{package_name}.{object_name}\''
+
             new_object = bpy.data.objects[object_name]
-            new_object.data.name = f'StaticMesh\'{package_name}.{object_name}\''
+            new_object.data.name = package_reference
             new_object.data.use_auto_smooth = False
+
+            # Provide a "stable" reference to the object in the package.
+            # The name of the data block is not stable because the object & data can be duplicated in Blender fairly
+            # easily, thus changing the name of the data block.
+            new_object.bdk.package_reference = package_reference
 
             new_object['Class'] = 'StaticMeshActor'
 
