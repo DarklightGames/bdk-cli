@@ -47,35 +47,45 @@ class BuildManifest(dict):
         def size(self, value: int):
             self['size'] = value
 
-    def __init__(self, files):
-        dict.__init__(self, files=files)
+    def __init__(self, files=dict(), cube_maps=dict()):
+        dict.__init__(self, files=files, cube_maps=cube_maps)
 
     @property
     def files(self) -> Dict[str, File]:
         return self['files']
 
+    @property
+    def cube_maps(self) -> Dict[str, File]:
+        return self['cube_maps']
+
     def mark_file_as_built(self, file: str):
         if file in self.files:
             self.files[file]['is_built'] = True
+
+    def mark_cubemap_as_built(self, file: str):
+        if file in self.cube_maps:
+            self.cube_maps[file]['is_built'] = True
 
     @staticmethod
     def load() -> 'BuildManifest':
         build_directory = str(Path(os.environ['BUILD_DIRECTORY']).resolve())
         packages = {}
+        cube_maps = {}
         manifest_path = Path(os.path.join(build_directory, MANIFEST_FILENAME)).resolve()
 
         if os.path.isfile(manifest_path):
             with open(manifest_path, 'r') as file:
                 try:
                     data = json.load(file)
-                    packages = data['files']
+                    packages = data.get('files', {})
+                    cube_maps = data.get('cube_maps', {})
                 except UnicodeDecodeError as e:
                     print(e)
                 print('Build manifest loaded')
         else:
             print('Build manifest file not found')
 
-        return BuildManifest(packages)
+        return BuildManifest(files=packages, cube_maps=cube_maps)
 
     def save(self):
         build_directory = str(Path(os.environ['BUILD_DIRECTORY']).resolve())
@@ -108,7 +118,7 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
     else:
         manifest = BuildManifest.load()
 
-    # TODO: remove package references that no longer exist, and delete their associated bdk-build data.
+    # Remove package references that no longer exist, and delete their associated bdk-build data.
     manifest_files = [x for x in manifest.files]
     for file in manifest_files:
         path = Path(root_directory, file)
@@ -118,6 +128,14 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
             if package_build_directory.is_dir():
                 shutil.rmtree(package_build_directory)
             manifest.files.pop(file)
+
+    # Remove cubemap references that no longer exist.
+    manifest_cube_maps = [x for x in manifest.cube_maps]
+    for file in manifest_cube_maps:
+        path = Path(build_directory, file)
+        if not path.is_file():
+            print(f"{path} no longer exists!")
+            manifest.cube_maps.pop(file)
 
     # Read ignore patterns from the .bdkignore file.
     bdkignore_filename = '.bdkignore'
@@ -203,6 +221,36 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
     return packages_to_build
 
 
+def build_cube_map(cubemap_file: str, build_directory: str):
+    relative_package_directory = Path(cubemap_file).parent.parent
+    with open(os.path.join(os.environ['BUILD_DIRECTORY'], cubemap_file), 'r') as f:
+        contents = f.read()
+        textures = re.findall(r'Faces\[\d] = ([\w\d]+\'[\w\d_\-.]+\')', contents)
+        faces = []
+        for texture in textures:
+            face_reference = UReference.from_string(texture)
+            image_path = os.path.join(
+                build_directory,
+                relative_package_directory,
+                face_reference.type_name,
+                f'{face_reference.object_name}.tga'
+            )
+            faces.append(image_path)
+        output_path = os.path.join(build_directory, cubemap_file.replace('.props.txt', '.tga'))
+        args = [
+            os.environ['BLENDER_PATH'],
+            './blender/cube2sphere.blend',
+            '--background',
+            '--python',
+            './blender/cube2sphere.py',
+            '--']
+
+        args.extend(faces)
+        args.extend(['--output', output_path])
+        completed_process = subprocess.run(args, stdout=open(os.devnull, 'wb'))
+        return cubemap_file, completed_process.returncode
+
+
 def build_cube_maps(clean: bool = False):
     manifest = BuildManifest.load()
 
@@ -220,8 +268,8 @@ def build_cube_maps(clean: bool = False):
         file_path = os.path.join(build_directory, cubemap_file_path)
         mtime = os.path.getmtime(file_path)
         size = os.path.getsize(file_path)
-        if cubemap_file_path in manifest.files:
-            file = manifest.files[cubemap_file_path]
+        if cubemap_file_path in manifest.cube_maps:
+            file = manifest.cube_maps[cubemap_file_path]
             if clean or mtime != file['last_modified_time'] or size != file['size'] or not file['is_built']:
                 # Update the file stats in the manifest.
                 file['last_modified_time'] = mtime
@@ -233,42 +281,21 @@ def build_cube_maps(clean: bool = False):
             file.last_modified_time = mtime
             file.size = size
             file.is_built = False
-            manifest.files[cubemap_file_path] = file
+            manifest.cube_maps[cubemap_file_path] = file
 
             cubemap_file_paths_to_build.append(cubemap_file_path)
 
     print(f'{len(cubemap_file_paths_to_build)} cubemap(s) marked for rebuilding')
 
     with tqdm.tqdm(total=len(cubemap_file_paths_to_build)) as pbar:
-        for cubemap_file in cubemap_file_paths_to_build:
-            relative_package_directory = Path(cubemap_file).parent.parent
-            with open(os.path.join(os.environ['BUILD_DIRECTORY'], cubemap_file), 'r') as f:
-                contents = f.read()
-                textures = re.findall(r'Faces\[\d] = ([\w\d]+\'[\w\d_\-.]+\')', contents)
-                faces = []
-                for texture in textures:
-                    face_reference = UReference.from_string(texture)
-                    image_path = os.path.join(
-                        build_directory,
-                        relative_package_directory,
-                        face_reference.type_name,
-                        f'{face_reference.object_name}.tga'
-                    )
-                    faces.append(image_path)
-                output_path = os.path.join(build_directory, cubemap_file.replace('.props.txt', '.tga'))
-                args = [
-                    os.environ['BLENDER_PATH'],
-                    './blender/cube2sphere.blend',
-                    '--background',
-                    '--python',
-                    './blender/cube2sphere.py',
-                    '--']
-
-                args.extend(faces)
-                args.extend(['--output', output_path])
-                completed_process = subprocess.run(args, stdout=open(os.devnull, 'wb'))
-                if completed_process.returncode == 0:
-                    manifest.mark_file_as_built(cubemap_file)
+        jobs = []
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for cubemap_file in cubemap_file_paths_to_build:
+                jobs.append(executor.submit(build_cube_map, cubemap_file, build_directory))
+        for future in as_completed(jobs):
+            cubemap_file, return_code = future.result()
+            if return_code == 0:
+                manifest.mark_cubemap_as_built(cubemap_file)
             pbar.update(1)
 
     manifest.save()
