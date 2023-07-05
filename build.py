@@ -296,6 +296,8 @@ def build_cube_maps(clean: bool = False):
             cubemap_file, return_code = future.result()
             if return_code == 0:
                 manifest.mark_cubemap_as_built(cubemap_file)
+            else:
+                print(f'Failed to build cubemap: {cubemap_file}')
             pbar.update(1)
 
     manifest.save()
@@ -335,7 +337,7 @@ def build_assets(
 
     # Order the packages so that texture packages are built first.
     # NOTE: It's possible for non-UTX packages to have textures in them.
-    ext_order = ['.usx', '.utx', '.rom']
+    ext_order = [ '.rom', '.usx', '.utx']
     package_paths_to_build = list(filter(lambda x: os.path.splitext(x)[1] in ext_order, package_paths_to_build))
 
     def package_extension_sort_key_cb(path: str):
@@ -345,6 +347,10 @@ def build_assets(
             return -1
 
     package_paths_to_build.sort(key=package_extension_sort_key_cb, reverse=True)
+
+    print('Build order:')
+    for p in package_paths_to_build:
+        print(p)
 
     success_count = 0
     failure_count = 0
