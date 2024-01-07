@@ -5,9 +5,9 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-BLENDER_VERSION_MIN = '3.5.0'
-UMODEL_VERSION_MIN = 1590
-IO_SCENE_PSK_PSA_VERSION_MIN = '4.2.0'
+BLENDER_VERSION_MIN = '4.0.0'
+UMODEL_VERSION_MIN = 1601
+IO_SCENE_PSK_PSA_VERSION_MIN = '5.0.0'
 IO_IMPORT_UMATERIAL_VERSION_MIN = '0.1.0'
 
 load_dotenv()
@@ -70,7 +70,7 @@ def rebuild(args: argparse.Namespace):
 
 def build_cubemaps(args: argparse.Namespace):
     from build import build_cube_maps
-    build_cube_maps(clean=args.clean)
+    build_cube_maps(clean=args.clean, name_filter=args.name_filter)
 
 
 def init(args: argparse.Namespace):

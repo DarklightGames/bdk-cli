@@ -1,2 +1,2 @@
 cd /D "%~dp0"
-python .\bdk.py --mod DarkestHourDev build
+.\venv\Scripts\activate && python .\bdk.py --mod DarkestHourDev build

@@ -105,7 +105,7 @@ def export_package(output_path: str, package_path: str):
     root_dir = str(Path(os.environ['ROOT_DIRECTORY']).resolve())
     umodel_path = Path(os.environ['UMODEL_PATH']).resolve()
     args = [str(umodel_path), '-export', '-nolinked', f'-out="{output_path}"', f'-path="{root_dir}"', package_path]
-    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return subprocess.run(args)
 
 
 def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = False, name_filter: Optional[str] = None) -> List[str]:
@@ -149,14 +149,15 @@ def export_assets(mod: Optional[str] = None, dry: bool = False, clean: bool = Fa
         "Animations",
         "StaticMeshes",
         "Textures",
-        "Sounds"
+        "Sounds",
+        "System",  # .u files can contain assets as well.
     ]
 
     if mod is not None:
         asset_paths += [mod]
 
     # Get a list of packages with matching suffixes in the root directory.
-    package_suffixes = ['.usx', '.utx', '.rom']
+    package_suffixes = ['.usx', '.utx', '.rom', '.u']
     package_paths = set()
 
     for asset_path in asset_paths:
@@ -251,7 +252,7 @@ def build_cube_map(cubemap_file: str, build_directory: str):
         return cubemap_file, completed_process.returncode
 
 
-def build_cube_maps(clean: bool = False):
+def build_cube_maps(clean: bool = False, name_filter: str = None):
     manifest = BuildManifest.load()
 
     pattern = '**/Cubemap/*.props.txt'
@@ -265,6 +266,9 @@ def build_cube_maps(clean: bool = False):
     # Filter out cube maps that have already been built
     cubemap_file_paths_to_build = []
     for cubemap_file_path in cubemap_file_paths:
+        if name_filter is not None:
+            if not fnmatch.fnmatch(os.path.basename(cubemap_file_path), name_filter):
+                continue
         file_path = os.path.join(build_directory, cubemap_file_path)
         mtime = os.path.getmtime(file_path)
         size = os.path.getsize(file_path)
@@ -317,7 +321,7 @@ def build_assets(
 
     # Build the cube maps.
     if not no_cubemaps:
-        build_cube_maps(clean)
+        build_cube_maps(clean, name_filter)
 
     manifest = BuildManifest.load()
 
@@ -337,7 +341,7 @@ def build_assets(
 
     # Order the packages so that texture packages are built first.
     # NOTE: It's possible for non-UTX packages to have textures in them.
-    ext_order = [ '.rom', '.usx', '.utx']
+    ext_order = [ '.rom', '.usx', '.utx', '.u']
     package_paths_to_build = list(filter(lambda x: os.path.splitext(x)[1] in ext_order, package_paths_to_build))
 
     def package_extension_sort_key_cb(path: str):
@@ -363,6 +367,10 @@ def build_assets(
         script_path = './blender/blend.py'
 
         input_directory = os.path.splitext(package_build_path)[0]
+
+        if not os.path.isdir(input_directory):
+            print(f'Input directory does not exist: {input_directory}, skipping')
+            continue
 
         if os.path.splitext(package_path)[1] == '.rom':
             root_directory = os.environ['MAPS_DIRECTORY']

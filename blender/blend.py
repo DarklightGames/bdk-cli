@@ -2,7 +2,6 @@ import sys
 import warnings
 from pathlib import Path
 from typing import List
-import threading
 
 import bpy
 import os
@@ -98,7 +97,7 @@ def build(args):
 
             new_object = bpy.data.objects[object_name]
             new_object.data.name = package_reference
-            new_object.data.use_auto_smooth = False
+            # new_object.data.use_auto_smooth = False
 
             # Provide a "stable" reference to the object in the package.
             # The name of the data block is not stable because the object & data can be duplicated in Blender fairly
